@@ -5,6 +5,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:flutter_tts/flutter_tts.dart';
+
+
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +42,19 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _modelLoaded = false;
   String _prediction = '--';
 
+  //// speack to text
+  late stt.SpeechToText _speech;
+  bool _speechEnabled = false;
+  String _sst_text = '';
+
+  ////// text to speach
+  late FlutterTts _flutterTts;
+  String _tts_text = '';
+  bool _autoSpeak = false;
+  String _lastSpoken = '';
+
+
+
   // --- BLE parameters ---
   final _deviceId    = 'EC:70:C8:52:75:F0';
   final _serviceUuid = Guid('6E400001-B5A3-F393-E0A9-E50E24DCCA9E');
@@ -57,7 +74,50 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _initialize();  // load model → then BLE
+    _initSpeech();
+    _flutterTts = FlutterTts();
+
   }
+
+  void _initSpeech() async {
+    _speech = stt.SpeechToText();
+    _speechEnabled = await _speech.initialize(
+      onStatus: (_) => setState((){}),
+      onError: (_)  => setState((){}),
+    );
+    setState((){});
+  }
+  void _listen() async {
+    if (!_speechEnabled) return;
+    if (_speech.isListening) {
+      await _speech.stop();
+    } else {
+      _sst_text = '';
+      await _speech.listen(
+        onResult: (result) {
+          setState(() {
+            _sst_text = result.recognizedWords;
+            _tts_text = _sst_text; /////should be changed later
+            // after updating _sst_text and _tts_text speak teh
+            if (_autoSpeak && _tts_text.isNotEmpty && _tts_text != _lastSpoken) {
+              _speak();
+              _lastSpoken = _tts_text;
+            }
+
+          });
+
+        },
+      );
+    }
+    setState((){});
+  }
+
+  Future<void> _speak() async {
+    if (_tts_text.isNotEmpty) {
+      await _flutterTts.speak(_tts_text);
+    }
+  }
+
 
   Future<void> _initialize() async {
     // 1) Load & allocate TFLite model
@@ -302,6 +362,79 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
             ),
 
+
+
+            const SizedBox(height: 12),
+            // 1) TTS card with auto‑play toggle
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+
+
+
+                    // <-- MANUAL PLAY BUTTON
+                    IconButton(
+                      icon: const Icon(Icons.play_arrow, color: Colors.blue),
+                      onPressed: _speak,
+                    ),
+
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _tts_text.isEmpty ? 'Nothing to speak' : _tts_text,
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // <-- AUTO‑PLAY TOGGLE
+                    Switch(
+                      value: _autoSpeak,
+                      onChanged: (v) => setState(() {
+                        _autoSpeak = v;
+                        // reset last spoken so it will play fresh next time
+                        _lastSpoken = '';
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 48), //extraspace
+
+            const SizedBox(height: 12),
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        _speech.isListening ? Icons.mic : Icons.mic_none,
+                        color: _speech.isListening ? Colors.red : Colors.grey,
+                      ),
+                      onPressed: _listen,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _sst_text.isEmpty
+                            ? 'Tap mic and speak...'
+                            : _sst_text,
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
 
           ],
